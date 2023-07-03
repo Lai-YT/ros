@@ -7,24 +7,18 @@
 use core::panic::PanicInfo;
 use ros::println;
 
+#[test_case]
+fn test_println_simple() {
+    println!("test_println_simple output");
+}
+
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
-    println!("Hello World{}", "!");
-
-    #[cfg(test)]
     test_main();
 
     loop {}
 }
 
-#[cfg(not(test))]
-#[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
-    println!("{}", info);
-    loop {}
-}
-
-#[cfg(test)]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     ros::test_panic_handler(info);
