@@ -13,20 +13,19 @@ pub extern "C" fn _start() -> ! {
 
     ros::init();
 
-    x86_64::instructions::interrupts::int3();
     println!("It did not crash!");
 
     #[cfg(test)]
     test_main();
 
-    loop {}
+    ros::hlt_loop();
 }
 
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     println!("{}", info);
-    loop {}
+    ros::hlt_loop();
 }
 
 #[cfg(test)]

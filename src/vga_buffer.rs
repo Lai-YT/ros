@@ -2,6 +2,8 @@ use core::fmt;
 use core::fmt::Write;
 use lazy_static::lazy_static;
 use spin::Mutex;
+use volatile::Volatile;
+use x86_64::instructions::interrupts;
 
 lazy_static! {
     pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer {
@@ -24,7 +26,10 @@ macro_rules! println {
 
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
-    WRITER.lock().write_fmt(args).unwrap();
+    // disable interrupts as long as the Mutex is locked
+    interrupts::without_interrupts(|| {
+        WRITER.lock().write_fmt(args).unwrap();
+    });
 }
 
 #[test_case]
@@ -44,13 +49,18 @@ fn test_println_output() {
     //             0         1         2         3         4
     //             0123456789012345678901234567890123456789012
     let s = "Some test string that fits on a single line";
-    println!("{}", s);
-    for (i, c) in s.chars().enumerate() {
-        // NOTE: the last line is BUFFER_HEIGHT - 1 with a new line appended immediately,
-        // so the string should appear on line BUFFER_HEIGHT - 2.
-        let screen_char = WRITER.lock().buffer.chars[BUFFER_HEIGHT - 2][i].read();
-        assert_eq!(char::from(screen_char.ascii_character), c);
-    }
+    // NOTE: I think the writer doesn't have to be kept as locked during the test
+    // since we've already disable the interrupts.
+    interrupts::without_interrupts(|| {
+        println!(""); // avoid test failure when the timer handler has already printed some . characters to the current line
+        println!("{}", s);
+        for (i, c) in s.chars().enumerate() {
+            // NOTE: the last line is BUFFER_HEIGHT - 1 with a new line appended immediately,
+            // so the string should appear on line BUFFER_HEIGHT - 2.
+            let screen_char = WRITER.lock().buffer.chars[BUFFER_HEIGHT - 2][i].read();
+            assert_eq!(char::from(screen_char.ascii_character), c);
+        }
+    });
 }
 
 #[allow(dead_code)]
@@ -94,8 +104,6 @@ struct ScreenChar {
 
 const BUFFER_HEIGHT: usize = 25;
 const BUFFER_WIDTH: usize = 80;
-
-use volatile::Volatile;
 
 #[repr(transparent)]
 struct Buffer {
