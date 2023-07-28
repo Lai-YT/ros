@@ -4,11 +4,16 @@
 #![test_runner(ros::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
+extern crate alloc;
+use alloc::boxed::Box;
+use alloc::rc::Rc;
+use alloc::vec;
+use alloc::vec::Vec;
 use bootloader::{entry_point, BootInfo};
 use core::panic::PanicInfo;
+use ros::allocator;
 use ros::memory;
 use ros::println;
-use x86_64::structures::paging::Page;
 use x86_64::VirtAddr;
 
 entry_point!(kernel_main);
@@ -23,20 +28,31 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     let mut frame_allocator =
         unsafe { memory::BootInfoFrameAllocator::init(&boot_info.memory_map) };
 
-    // map an unused page
-    // NOTE: the page at address 0 should stay unused to guarantee that dereferencing a null pointer
-    // causes a page fault, so we know that the bootloader leaves it unmapped.
-    let page = Page::containing_address(VirtAddr::new(0xdeadbeef000));
-    memory::create_example_mapping(page, &mut mapper, &mut frame_allocator);
+    allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialization failed");
 
-    let page_ptr: *mut u64 = page.start_address().as_mut_ptr();
-    unsafe {
-        page_ptr
-            // We don’t write to the start of the page because the top line of the VGA buffer is
-            // directly shifted off the screen by the next println.
-            .offset(400)
-            .write_volatile(0x_f021_f077_f065_f04e /* "New!" on white background */)
+    // allocate a number on the heap
+    let heap_value = Box::new(41);
+    println!("heap_value at {:p}", heap_value);
+
+    // create a dynamically sized vector
+    let mut vec = Vec::new();
+    for i in 0..500 {
+        vec.push(i);
     }
+    println!("vec at {:p}", vec.as_slice());
+
+    // create a reference counted vector -> will be freed when count reaches 0
+    let reference_counted = Rc::new(vec![1, 2, 3]);
+    let cloned_reference = Rc::clone(&reference_counted);
+    println!(
+        "current reference count is {}",
+        Rc::strong_count(&cloned_reference)
+    );
+    core::mem::drop(reference_counted);
+    println!(
+        "reference count is {} now",
+        Rc::strong_count(&cloned_reference)
+    );
 
     #[cfg(test)]
     test_main();
